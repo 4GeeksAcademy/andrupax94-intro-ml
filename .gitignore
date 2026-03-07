@@ -3,3 +3,18 @@ __pycache__
 .learn
 data/raw/*
 data/processed/*
+# Entornos virtuales (el estándar)
+venv/
+.venv/
+env/
+
+# Carpetas de Python
+__pycache__/
+*.py[cod]
+
+# Tu carpeta específica si así se llama
+python3.12/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
