@@ -9,7 +9,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import classification_report
-
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import SelectKBest, f_classif
@@ -24,85 +23,86 @@ def db_connect():
     engine.connect()
     return engine
 
+
+""" ----CREATE_FACTOR_TRANSF_AND_JSON----
+    Utilidad: Sirve para factorizar o transformar columnas o variables, y ademas crear un json almacenando los datos factorizados
+    Devuelve: Nada, Modifica el dataframe directamente.
+    Parametros: 
+        * column: la columna del data frame que se va a factorizar
+        * df: el dataframe
+        * folder_name:nombre de la carpeta donde se va a guardar el json
+        * transformation:Indica si es una transformacion o un factori por defecto esta en FALSE
+        * transformation_func:la funcion que va a transformar cada dato
+"""
+
 def create_factor_transf_and_json(column, df,folder_name, transformation = False,transformation_func = lambda x: x):
-    file_name = ""
-        
+    file_name = ""  
+    # Depende del valor de "transformation" toma un camino u otro
     if transformation:
-         # ahora se le pasa a la funcion una funcion de trnasformacion
+        # Creamos una copia temporal
         df_aux = df[[column]].copy()
+        # Ahora se le pasa a la funcion "transformation_func" con "apply" y creamos las columna "..._transf"
         df[column+"_transf"] = df_aux[column].apply(transformation_func)
         folder_path = '../data/processed/tranformations/' + folder_name
         df_aux = df[[column,column+"_transf"]].copy()
     else:
-        #Creo la columna Factor
+        #Creo la Columna "..._Factor"
         df[column+"_factor"] = pd.factorize(df[column])[0]
         folder_path = '../data/processed/factories/' + folder_name
         df_aux = df[[column, column+"_factor"]].copy()
         
     #crea la carpeta si no existe
     os.makedirs(folder_path, exist_ok=True)
-
+    
+    # Esto prepara algunas columnas de tipo date para el json
     for col in df_aux.columns:
         if pd.api.types.is_datetime64_any_dtype(df_aux[col]):
             df_aux[col] = df_aux[col].dt.strftime('%Y-%m-%d')
     
-    # si tranformatios es true creamos renombramos parea que guarde en la carpeta tranformations de otra manera en factories
+    # si "transformation" es true creamos el archivo y que guarde en la carpeta tranformations de otra manera en factories
     if transformation:
         file_name = f'{column}_transformation_rules.json'
         df_to_save = df_aux[[column, column+"_transf"]]
         data_to_export = df_to_save.to_dict(orient = 'records')
     else:
-      
         file_name = f'{column}_factory_rules.json'
         df_unique = df_aux[[column, column+"_factor"]].drop_duplicates()
         data_to_export = {row[column]: row[column+"_factor"] for _, row in df_unique.iterrows()}
 
+    #Contruimos La ruta final de guardado
     full_path = os.path.join(folder_path, file_name)
     with open(full_path, 'w') as f:
         json.dump(data_to_export, f, indent=4)
-    #elimino la columna antigua antigua
+        
+    #Elimino la columna antigua
     df.drop([column],  axis = 1,  inplace = True)
     print(f"Json guardado en: {full_path}")
-def train_print_model(x_train, x_train_out, y_train, x_test, y_test, x_test_out,type_model="lg", class_weight=None, max_iter=10000,max_depth=7, umbral=0.5):
-    # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
-    if type_model == "lg":
-        model = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
-        model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
-    elif type_model == "rf":
-        # Para Random Forest usamos n_estimators. El class_weight funciona igual.
-        model = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
-        model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
 
-    # entrenamos (usando las variables globales x_train y x_train_out)
-    model.fit(x_train, y_train)
-    model_out.fit(x_train_out, y_train)
-    
-    # Obtener Probabilidades (en lugar de clases directas)
-    # antes usaba predict pero para modificar el umbral necesito predict_proba
-    probs = model.predict_proba(x_test)[:, 1]
-    probs_out = model_out.predict_proba(x_test_out)[:, 1]
 
-    # Aplico el umbral
-    predictions = (probs >= umbral).astype(int)
-    predictions_out = (probs_out >= umbral).astype(int)
-    
-    # Revisamos Las Métricas De Clasificacion como esta en el collab
-    report = classification_report(y_test, predictions)
-    report_out = classification_report(y_test, predictions_out)
-    
-    print(f"--- Reporte de Modelo: {type_model.upper()} (Umbral: {umbral}) ---")
-    print("Reporte Sin Outliers:\n")
-    print(report)
-    print("Reporte Con Outliers:\n")
-    print(report_out)
-# No se si me servira en un futuro en los siguientes ejercicios pero cree una funcion que haga el split,los scalers, separe los outliers y guarde los limites en un json de una vez.
+
+""" ----TRAIN_PREPARE_TEST_DATA----
+    Utilidad: Sirve para CREAR datos de entrenamiento y test para luego pasarselos al modelo
+    Devuelve: Datos divididos para pasarselos al modelo(x_train, x_test, y_train, y_test, x_train_out, x_test_out)
+    Parametros: 
+        * df: el dataframe
+        * target_col: Que columna va a ser nuestro target y
+        * folder_name:nombre de la carpeta donde se va a guardar el json
+        * test_size: la proporcion de la divicion de datos por defecto el 20%
+        * random_state: la semilla de aleatoridad
+        * scaler_type: el tipo de escalador cuando vale:
+            0: sin escalado,
+            1: usa StandardScaler
+            2: usa minmax
+        * transformation:Indica si es una transformacion o un factori por defecto esta en FALSE
+        * stractify: le dice al split que intente dividirlos distribuyendo bien los valores basandose en la columna target y
+        * transformation_func:la funcion que va a transformar cada dato
+"""
 def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42, scaler_type=1, stratify = False):
  
     # Separamos X e y
     X = df.drop(columns=[target_col])
     y = df[target_col]
-    
-    # hacemos el split dependiendo del valor de stractify, stractify le dice al split que intente dividirlos distribuyendo bien los valores de una columna
+
     if stratify:
         x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify = y)
     else:
@@ -127,11 +127,9 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
         low = Q1 - 1.5 * IQR
         #nuestro limite alto
         high = Q3 + 1.5 * IQR
-        
         # Guardamos los limites
         outlier_limits[col] = {"lower_bound": float(low), "upper_bound": float(high)}
-        
-        # suavizamos los outliers, baiscamente si es mayor high lo convierte en high y si es menor a low lo convierte a low
+        # Suavizamos los outliers, basicamente si es mayor a high lo convierte en high y si es menor a low lo convierte en low
         x_train_out[col] = np.clip(x_train_out[col], low, high)
         x_test_out[col] = np.clip(x_test_out[col], low, high)
         
@@ -143,29 +141,71 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
     with open(f"{path}outlier_limits.json", "w") as f:
         json.dump(outlier_limits, f, indent=4)
         
-    # Escalamos dependiendo de la variable scaler_type puede se StandardScaler, MinMaxScaler
-
+    # Escalamos dependiendo de la variable scaler_type.
     if scaler_type == 1:
         sc = StandardScaler()
-         # Aprende Y Transforma El Train Normal
         x_train[numeric_cols] = sc.fit_transform(x_train[numeric_cols])
-        
-        # Solo Transforma El Resto
         x_test[numeric_cols] = sc.transform(x_test[numeric_cols])
         x_train_out[numeric_cols] = sc.transform(x_train_out[numeric_cols])
         x_test_out[numeric_cols] = sc.transform(x_test_out[numeric_cols])
         
     elif scaler_type == 2:
         mx = MinMaxScaler()
-        # Aprende Y Transforma El Train Normal
         x_train[numeric_cols] = mx.fit_transform(x_train[numeric_cols])
-        
-        # Solo Transforma El Resto
         x_test[numeric_cols] = mx.transform(x_test[numeric_cols])
         x_train_out[numeric_cols] = mx.transform(x_train_out[numeric_cols])
         x_test_out[numeric_cols] = mx.transform(x_test_out[numeric_cols])
    
+    # Devolvemos los datos de entrenamiento con y sin outliers
     return x_train, x_test, y_train, y_test, x_train_out, x_test_out
      
-# meti la logica de entrenar al modelo porque creo que lo voy a necesitar mas de una ves, se le pasa los x_test el class_weight que es un diccionario con la proporcion de clases, 
-# el max_iter son maximas iteraciones y el umbral para ajustar la sensibilidad del modelo
+""" ----TRAIN_PRINT_MODEL----
+    Utilidad: Sirve inicializar y entrenar al modelo de prediccion.
+    Devuelve: Nada, Immprime Un resumen de los resultados de la prediccion.
+    Parametros: 
+        * x_train, x_train_out, y_train, x_test, y_test, x_test_out: Datos de entrenamiento con y sin outliers 
+        * type_model: tipo del modelo a usar:
+            lr:LinearRegression
+            lg:LogisticRegression
+            rf:RandomForestClassifier
+        * class_weight:Distribucion del peso de las clases.
+        * umbral:Umbral de aceptacion por defecto de un 0.5%
+        * max_iter:Exclusivo de LogisticRegression controla el numero de iteraciones
+        * max_depth:Exclusivo de RandomForestClassifier controla la profundidad del arbol.
+"""
+
+def train_print_model(x_train, x_train_out, y_train, x_test, y_test, x_test_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7):
+    # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
+    if type_model == "lg":
+        model = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
+        model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
+    elif type_model == "rf":
+        model = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
+        model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
+
+    # entrenamos usando x_train y x_train_out
+    model.fit(x_train, y_train)
+    model_out.fit(x_train_out, y_train)
+    
+    # Obtener Probabilidades (en lugar de clases directas)
+    # antes usaba predict pero para modificar el umbral necesito predict_proba
+    probs = model.predict_proba(x_test)[:, 1]
+    probs_out = model_out.predict_proba(x_test_out)[:, 1]
+
+    # Aplico el umbral
+    predictions = (probs >= umbral).astype(int)
+    predictions_out = (probs_out >= umbral).astype(int)
+    
+    # Revisamos Las Metricas De Clasificacion como esta en el collab
+    report = classification_report(y_test, predictions)
+    report_out = classification_report(y_test, predictions_out)
+    
+    print(f"--- Reporte de Modelo: {type_model.upper()} (Umbral: {umbral}) ---")
+    print("Reporte Sin Outliers:\n")
+    print(report)
+    print("Reporte Con Outliers:\n")
+    print(report_out)
+
+
+
+
