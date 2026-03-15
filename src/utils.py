@@ -6,12 +6,10 @@ import json
 import os
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.metrics import classification_report
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.metrics import classification_report,r2_score,mean_squared_error
 from sklearn.ensemble import RandomForestClassifier
 # load the .env file variables
 load_dotenv()
@@ -80,9 +78,10 @@ def create_factor_transf_and_json(column, df,folder_name, transformation = False
 
 
 
+
 """ ----TRAIN_PREPARE_TEST_DATA----
     Utilidad: Sirve para CREAR datos de entrenamiento y test para luego pasarselos al modelo
-    Devuelve: Datos divididos para pasarselos al modelo(x_train, x_test, y_train, y_test, x_train_out, x_test_out)
+    Devuelve: Datos divididos para pasarselos al modelo(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out)
     Parametros: 
         * df: el dataframe
         * target_col: Que columna va a ser nuestro target y
@@ -104,24 +103,25 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
     y = df[target_col]
 
     if stratify:
-        x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify = y)
+        x_train_out, x_test_out, y_train_out, y_test_out = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify = y)
     else:
-        x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+        x_train_out, x_test_out, y_train_out, y_test_out = train_test_split(X, y, test_size=test_size, random_state=random_state)
 
     # Copiamos para crear los outliers y escalar sin destruir los originales
-    x_train_out = x_train.copy()
-    x_test_out = x_test.copy()
-    
+    x_train_no_out = x_train_out.copy()
+    x_test_no_out = x_test_out.copy()
+    y_train_no_out = y_train_out.copy()
+    y_test_no_out = y_test_out.copy()
     # creamos un diccionario limpio para almacenar los limites mas adelante
     outlier_limits = {}
     # buscamos las variables numericas
-    numeric_cols = x_train_out.select_dtypes(include=["number"]).columns
+    numeric_cols = x_train_no_out.select_dtypes(include=["number"]).columns
     
     #luego recorremos las columnas
     for col in numeric_cols:
         # calculamos el Rango Intercuartil como vimos en clases (IQR), que requiere del primer quartil y el tercero
-        Q1 = x_train_out[col].quantile(0.25)
-        Q3 = x_train_out[col].quantile(0.75)
+        Q1 = x_train_no_out[col].quantile(0.25)
+        Q3 = x_train_no_out[col].quantile(0.75)
         IQR = Q3 - Q1
         #nuestro limite bajo
         low = Q1 - 1.5 * IQR
@@ -130,8 +130,8 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
         # Guardamos los limites
         outlier_limits[col] = {"lower_bound": float(low), "upper_bound": float(high)}
         # Suavizamos los outliers, basicamente si es mayor a high lo convierte en high y si es menor a low lo convierte en low
-        x_train_out[col] = np.clip(x_train_out[col], low, high)
-        x_test_out[col] = np.clip(x_test_out[col], low, high)
+        x_train_no_out[col] = np.clip(x_train_no_out[col], low, high)
+        x_test_no_out[col] = np.clip(x_test_no_out[col], low, high)
         
     #Creamos la carpeta si no existe
     path = f"../data/processed/outliers/{folder_name}/"
@@ -144,26 +144,30 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
     # Escalamos dependiendo de la variable scaler_type.
     if scaler_type == 1:
         sc = StandardScaler()
-        x_train[numeric_cols] = sc.fit_transform(x_train[numeric_cols])
-        x_test[numeric_cols] = sc.transform(x_test[numeric_cols])
-        x_train_out[numeric_cols] = sc.transform(x_train_out[numeric_cols])
+        x_train_out[numeric_cols] = sc.fit_transform(x_train_out[numeric_cols])
         x_test_out[numeric_cols] = sc.transform(x_test_out[numeric_cols])
+        x_train_no_out[numeric_cols] = sc.transform(x_train_no_out[numeric_cols])
+        x_test_no_out[numeric_cols] = sc.transform(x_test_no_out[numeric_cols])
         
     elif scaler_type == 2:
         mx = MinMaxScaler()
-        x_train[numeric_cols] = mx.fit_transform(x_train[numeric_cols])
-        x_test[numeric_cols] = mx.transform(x_test[numeric_cols])
-        x_train_out[numeric_cols] = mx.transform(x_train_out[numeric_cols])
+        x_train_out[numeric_cols] = mx.fit_transform(x_train_out[numeric_cols])
         x_test_out[numeric_cols] = mx.transform(x_test_out[numeric_cols])
+        x_train_no_out[numeric_cols] = mx.transform(x_train_no_out[numeric_cols])
+        x_test_no_out[numeric_cols] = mx.transform(x_test_no_out[numeric_cols])
    
     # Devolvemos los datos de entrenamiento con y sin outliers
-    return x_train, x_test, y_train, y_test, x_train_out, x_test_out
+    return x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out
+     
+     
+     
+     
      
 """ ----TRAIN_PRINT_MODEL----
     Utilidad: Sirve inicializar y entrenar al modelo de prediccion.
     Devuelve: Nada, Immprime Un resumen de los resultados de la prediccion.
     Parametros: 
-        * x_train, x_train_out, y_train, x_test, y_test, x_test_out: Datos de entrenamiento con y sin outliers 
+        * x_train_out, x_train_no_out, y_train_out, x_test_out, y_test_out, x_test_no_out: Datos de entrenamiento con y sin outliers 
         * type_model: tipo del modelo a usar:
             lr:LinearRegression
             lg:LogisticRegression
@@ -174,37 +178,48 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
         * max_depth:Exclusivo de RandomForestClassifier controla la profundidad del arbol.
 """
 
-def train_print_model(x_train, x_train_out, y_train, x_test, y_test, x_test_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7):
+def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7):
     # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
     if type_model == "lg":
-        model = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
         model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
+        model_no_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
     elif type_model == "rf":
-        model = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
         model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
+        model_no_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
+    elif type_model == "lr":  # linear regression
+        model_out = LinearRegression()
+        model_no_out = LinearRegression()
+    # entrenamos usando x_train_out y x_train_no_out
+    model_out.fit(x_train_out, y_train_out)
+    model_no_out.fit(x_train_no_out, y_train_no_out)
+    
+    if type_model != "lr":
+        # Obtener Probabilidades (en lugar de clases directas)
+        # antes usaba predict pero para modificar el umbral necesito predict_proba
+        probs_out = model_out.predict_proba(x_test_out)[:, 1]
+        probs_no_out = model_no_out.predict_proba(x_test_no_out)[:, 1]
 
-    # entrenamos usando x_train y x_train_out
-    model.fit(x_train, y_train)
-    model_out.fit(x_train_out, y_train)
-    
-    # Obtener Probabilidades (en lugar de clases directas)
-    # antes usaba predict pero para modificar el umbral necesito predict_proba
-    probs = model.predict_proba(x_test)[:, 1]
-    probs_out = model_out.predict_proba(x_test_out)[:, 1]
+        # Aplico el umbral
+        predictions_out = (probs_out >= umbral).astype(int)
+        predictions_no_out = (probs_no_out >= umbral).astype(int)
+        
+        # Revisamos Las Metricas De Clasificacion como esta en el collab
+        report_out = classification_report(y_test_out, predictions_out)
+        report_no_out = classification_report(y_test_no_out, predictions_no_out)
+        
+        return report_out, report_no_out
+    else:
+        #predicciones
+        preds_out = model_out.predict(x_test_out)
+        preds_no_out = model_no_out.predict(x_test_no_out)
+        # error cuadratico medio 
+        mse_out = mean_squared_error(y_test_out, preds_out)
+        mse_no_out = mean_squared_error(y_test_no_out, preds_no_out)
+        # y r2
+        r2_out = r2_score(y_test_out, preds_out)
+        r2_no_out = r2_score(y_test_no_out, preds_no_out)
+        return preds_out, preds_no_out, r2_out, r2_no_out, mse_out, mse_no_out
 
-    # Aplico el umbral
-    predictions = (probs >= umbral).astype(int)
-    predictions_out = (probs_out >= umbral).astype(int)
-    
-    # Revisamos Las Metricas De Clasificacion como esta en el collab
-    report = classification_report(y_test, predictions)
-    report_out = classification_report(y_test, predictions_out)
-    
-    print(f"--- Reporte de Modelo: {type_model.upper()} (Umbral: {umbral}) ---")
-    print("Reporte Sin Outliers:\n")
-    print(report)
-    print("Reporte Con Outliers:\n")
-    print(report_out)
 
 
 
