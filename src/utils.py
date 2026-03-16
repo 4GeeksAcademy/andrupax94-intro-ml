@@ -33,8 +33,8 @@ def db_connect():
         * transformation_func:la funcion que va a transformar cada dato
 """
 
-def create_factor_transf_and_json(column, df,folder_name, transformation = False,transformation_func = lambda x: x):
-    file_name = ""  
+def create_factor_transf_and_json(column, df,folder_name,target_column=None, transformation = False,transformation_func = lambda x: x):
+    file_name = "" 
     # Depende del valor de "transformation" toma un camino u otro
     if transformation:
         # Creamos una copia temporal
@@ -74,6 +74,12 @@ def create_factor_transf_and_json(column, df,folder_name, transformation = False
         
     #Elimino la columna antigua
     df.drop([column],  axis = 1,  inplace = True)
+    
+    # Reordenar columnas para asegurar que el target esté al final
+    if target_column is not None and target_column in df.columns:
+        cols = [c for c in df.columns if c != target_column] + [target_column]
+        df.__init__(df.reindex(columns=cols))
+        
     print(f"Json guardado en: {full_path}")
 
 
