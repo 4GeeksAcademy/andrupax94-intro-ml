@@ -9,8 +9,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.metrics import classification_report,r2_score,mean_squared_error
+from sklearn.metrics import classification_report,r2_score,mean_squared_error,accuracy_score,confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import LabelEncoder #CONVERSION DE VERIABLES CATEGORICAS EN NUMÉRICAS
+from sklearn.tree import plot_tree #VISUALIZACION DE TRAIN DECISION TREE
 # load the .env file variables
 load_dotenv()
 
@@ -33,7 +36,7 @@ def db_connect():
         * transformation_func:la funcion que va a transformar cada dato
 """
 
-def create_factor_transf_and_json(column, df,folder_name,target_column=None, transformation = False,transformation_func = lambda x: x):
+def create_factor_transf_and_json(column, df,folder_name,target_column=None, transformation = False,transformation_func = lambda x: x, label_encoder=True):
     file_name = "" 
     # Depende del valor de "transformation" toma un camino u otro
     if transformation:
@@ -45,7 +48,11 @@ def create_factor_transf_and_json(column, df,folder_name,target_column=None, tra
         df_aux = df[[column,column+"_transf"]].copy()
     else:
         #Creo la Columna "..._Factor"
-        df[column+"_factor"] = pd.factorize(df[column])[0]
+        if label_encoder:
+            le = LabelEncoder()
+            df[column + "_factor"] = le.fit_transform(df[column])
+        else:
+            df[column+"_factor"] = pd.factorize(df[column])[0]
         folder_path = '../data/processed/factories/' + folder_name
         df_aux = df[[column, column+"_factor"]].copy()
         
@@ -184,14 +191,17 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
         * max_depth:Exclusivo de RandomForestClassifier controla la profundidad del arbol.
 """
 
-def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7):
+def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42):
     # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
     if type_model == "lg":
         model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
         model_no_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
+    elif type_model == "dt":
+        model_out = DecisionTreeClassifier(random_state=random_state)
+        model_no_out = DecisionTreeClassifier(random_state=random_state)
     elif type_model == "rf":
-        model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
-        model_no_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=42,max_depth=max_depth)
+        model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
+        model_no_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
     elif type_model == "lr":  # linear regression
         model_out = LinearRegression()
         model_no_out = LinearRegression()
@@ -208,11 +218,17 @@ def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_
         # Aplico el umbral
         predictions_out = (probs_out >= umbral).astype(int)
         predictions_no_out = (probs_no_out >= umbral).astype(int)
-        
+
         # Revisamos Las Metricas De Clasificacion como esta en el collab
         report_out = classification_report(y_test_out, predictions_out)
         report_no_out = classification_report(y_test_no_out, predictions_no_out)
-        
+        if type_model == "dt":
+             accuracy_out = accuracy_score(y_test_out,predictions_out)
+             accuracy_no_out = accuracy_score(y_test_no_out,predictions_no_out)
+             confusion_matrix_out = confusion_matrix(y_test_out,predictions_out)
+             confusion_matrix_no_out = confusion_matrix(y_test_no_out,predictions_no_out)
+             return report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out
+            
         return report_out, report_no_out
     else:
         #predicciones
