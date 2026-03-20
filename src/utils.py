@@ -106,7 +106,15 @@ def create_factor_transf_and_json(column, df,folder_name,target_column=None, tra
         * scaler_type: 0: sin escalado, 1: StandardScaler, 2: MinMaxScaler.
         * stratify: Si es True, mantiene la proporcion de clases en el split.
 """
+""" ModelPrepareResults es una tupla especial para evitar recibir muchos parametro cuando se llame la funcion, por lo general seria asi :
+         x_train_out,x_test_out,y_train_out...= prepare_test_data(...)
+    
+    Ahora:
+         ptd = prepare_test_data(...)
+        
+    Y Se accede con ptd.x_train_out al valor
 
+"""
 ModelPrepareResults = namedtuple('ModelPrepareResults', ["x_train_out","x_test_out","y_train_out","y_test_out","x_train_no_out","x_test_no_out","y_train_no_out","y_test_no_out"])
 def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42, scaler_type=1, stratify = False):
     
@@ -187,8 +195,17 @@ def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42
         * max_depth: Profundidad maxima para arboles (DT y RF).
         * calibrate_cv: Numero de cortes para CalibratedClassifierCV.
 """
+""" ModelResults es una tupla especial para evitar recibir muchos parametro cuando se llame la funcion, por lo general seria asi :
+         ptd, type_model="lg", class_weight=None...= train_print_model(...)
+    
+    Ahora:
+         tpm = train_print_model(...)
+        
+    Y Se accede con tpm.report_out al valor
+
+"""
 fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_out"]
-ModelResults = namedtuple('ModelResults', fields,defaults=(None,) * len(fields))
+ModelResults = namedtuple('ModelResults', fields, defaults = (None,) * len(fields))
 
 def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None):
     
@@ -234,8 +251,12 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         predictions_no_out = (probs_no_out >= umbral).astype(int)
 
         # Revisamos Las Metricas De Clasificacion como esta en el collab
-        report_out = classification_report(y_test_out, predictions_out)
-        report_no_out = classification_report(y_test_no_out, predictions_no_out)
+        raw_report_out = classification_report(y_test_out, predictions_out)
+        raw_report_no_out = classification_report(y_test_no_out, predictions_no_out)
+        
+        # Agregamos el titulo con f-strings
+        report_out = f"--- REPORTE CON OUTLIERS ({type_model.upper()}) ---\n{raw_report_out}"
+        report_no_out = f"--- REPORTE SIN OUTLIERS ({type_model.upper()}) ---\n{raw_report_no_out}"
         if type_model == "dt":
              accuracy_out = accuracy_score(y_test_out,predictions_out)
              accuracy_no_out = accuracy_score(y_test_no_out,predictions_no_out)
