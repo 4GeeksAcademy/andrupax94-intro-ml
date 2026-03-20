@@ -110,7 +110,6 @@ def create_factor_transf_and_json(column, df,folder_name,target_column=None, tra
 ModelPrepareResults = namedtuple('ModelPrepareResults', ["x_train_out","x_test_out","y_train_out","y_test_out","x_train_no_out","x_test_no_out","y_train_no_out","y_test_no_out"])
 def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42, scaler_type=1, stratify = False):
     
-    
     # Separamos X e y
     X = df.drop(columns=[target_col])
     y = df[target_col]
@@ -188,7 +187,7 @@ def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42
         * max_depth: Profundidad maxima para arboles (DT y RF).
         * calibrate_cv: Numero de cortes para CalibratedClassifierCV.
 """
-fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_ou"]
+fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_out"]
 ModelResults = namedtuple('ModelResults', fields,defaults=(None,) * len(fields))
 
 def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None):
@@ -255,7 +254,7 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         # y r2
         r2_out = r2_score(y_test_out, preds_out)
         r2_no_out = r2_score(y_test_no_out, preds_no_out)
-        return ModelResults(preds_out, preds_no_out, r2_out, r2_no_out, mse_out, mse_no_out)
+        return ModelResults(preds_out = preds_out, preds_no_out = preds_no_out, r2_out = r2_out, r2_no_out = r2_no_out, mse_out = mse_out, mse_no_out = mse_no_out)
 
 
 
