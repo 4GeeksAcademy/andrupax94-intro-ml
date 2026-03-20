@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import classification_report,r2_score,mean_squared_error,accuracy_score,confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import LabelEncoder #CONVERSION DE VERIABLES CATEGORICAS EN NUMÉRICAS
 from sklearn.tree import plot_tree #VISUALIZACION DE TRAIN DECISION TREE
 # load the .env file variables
@@ -191,14 +192,17 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
         * max_depth:Exclusivo de RandomForestClassifier controla la profundidad del arbol.
 """
 
-def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42):
+def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None):
     # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
     if type_model == "lg":
         model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
         model_no_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
     elif type_model == "dt":
-        model_out = DecisionTreeClassifier(random_state=random_state)
-        model_no_out = DecisionTreeClassifier(random_state=random_state)
+        model_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
+        model_no_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
+        if calibrate_cv != None:
+            model_out = CalibratedClassifierCV(model_out, method='sigmoid', cv=calibrate_cv)
+            model_no_out = CalibratedClassifierCV(model_no_out, method='sigmoid', cv=calibrate_cv)
     elif type_model == "rf":
         model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
         model_no_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
@@ -227,9 +231,9 @@ def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_
              accuracy_no_out = accuracy_score(y_test_no_out,predictions_no_out)
              confusion_matrix_out = confusion_matrix(y_test_out,predictions_out)
              confusion_matrix_no_out = confusion_matrix(y_test_no_out,predictions_no_out)
-             return report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out
+             return report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out, probs_out, probs_no_out
             
-        return report_out, report_no_out
+        return report_out, report_no_out, probs_out, probs_no_out
     else:
         #predicciones
         preds_out = model_out.predict(x_test_out)
