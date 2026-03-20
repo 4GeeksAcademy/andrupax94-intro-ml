@@ -13,8 +13,8 @@ from sklearn.metrics import classification_report,r2_score,mean_squared_error,ac
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.preprocessing import LabelEncoder #CONVERSION DE VERIABLES CATEGORICAS EN NUMÉRICAS
-from sklearn.tree import plot_tree #VISUALIZACION DE TRAIN DECISION TREE
+from sklearn.preprocessing import LabelEncoder 
+from collections import namedtuple
 # load the .env file variables
 load_dotenv()
 
@@ -27,16 +27,17 @@ def db_connect():
 
 
 """ ----CREATE_FACTOR_TRANSF_AND_JSON----
-    Utilidad: Sirve para factorizar o transformar columnas o variables, y ademas crear un json almacenando los datos factorizados
-    Devuelve: Nada, Modifica el dataframe directamente.
+    Utilidad: Sirve para factorizar o transformar columnas y guardar las reglas en un json.
+    Devuelve: Nada, modifica el dataframe directamente (inplace).
     Parametros: 
-        * column: la columna del data frame que se va a factorizar
-        * df: el dataframe
-        * folder_name:nombre de la carpeta donde se va a guardar el json
-        * transformation:Indica si es una transformacion o un factori por defecto esta en FALSE
-        * transformation_func:la funcion que va a transformar cada dato
+        * column: La columna del dataframe a procesar.
+        * df: El dataframe a modificar.
+        * folder_name: Nombre de la carpeta para el json.
+        * target_column: Nombre de la columna objetivo para mantenerla al final.
+        * transformation: Si es True aplica funcion, si es False factoriza.
+        * transformation_func: Funcion lambda o def para transformar los datos.
+        * label_encoder: Si es True usa LabelEncoder, si no usa factorize.
 """
-
 def create_factor_transf_and_json(column, df,folder_name,target_column=None, transformation = False,transformation_func = lambda x: x, label_encoder=True):
     file_name = "" 
     # Depende del valor de "transformation" toma un camino u otro
@@ -94,24 +95,22 @@ def create_factor_transf_and_json(column, df,folder_name,target_column=None, tra
 
 
 """ ----TRAIN_PREPARE_TEST_DATA----
-    Utilidad: Sirve para CREAR datos de entrenamiento y test para luego pasarselos al modelo
-    Devuelve: Datos divididos para pasarselos al modelo(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out)
+    Utilidad: Sirve para CREAR datos de entrenamiento y test para luego pasarselos al modelo.
+    Devuelve: Objeto ModelPrepareResults con datos divididos, escalados y filtrados.
     Parametros: 
-        * df: el dataframe
-        * target_col: Que columna va a ser nuestro target y
-        * folder_name:nombre de la carpeta donde se va a guardar el json
-        * test_size: la proporcion de la divicion de datos por defecto el 20%
-        * random_state: la semilla de aleatoridad
-        * scaler_type: el tipo de escalador cuando vale:
-            0: sin escalado,
-            1: usa StandardScaler
-            2: usa minmax
-        * transformation:Indica si es una transformacion o un factori por defecto esta en FALSE
-        * stractify: le dice al split que intente dividirlos distribuyendo bien los valores basandose en la columna target y
-        * transformation_func:la funcion que va a transformar cada dato
+        * df: el dataframe original.
+        * target_col: Columna objetivo (y).
+        * folder_name: Nombre de la carpeta para guardar los limites de outliers.
+        * test_size: Proporcion de la division de datos (defecto 0.2).
+        * random_state: Semilla de aleatoriedad.
+        * scaler_type: 0: sin escalado, 1: StandardScaler, 2: MinMaxScaler.
+        * stratify: Si es True, mantiene la proporcion de clases en el split.
 """
-def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42, scaler_type=1, stratify = False):
- 
+
+ModelPrepareResults = namedtuple('ModelPrepareResults', ["x_train_out","x_test_out","y_train_out","y_test_out","x_train_no_out","x_test_no_out","y_train_no_out","y_test_no_out"])
+def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42, scaler_type=1, stratify = False):
+    
+    
     # Separamos X e y
     X = df.drop(columns=[target_col])
     y = df[target_col]
@@ -171,28 +170,40 @@ def train_prepare_test_data(df, target_col,folder_name, test_size=0.2, random_st
         x_test_no_out[numeric_cols] = mx.transform(x_test_no_out[numeric_cols])
    
     # Devolvemos los datos de entrenamiento con y sin outliers
-    return x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out
+    return ModelPrepareResults(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out)
      
      
      
      
      
 """ ----TRAIN_PRINT_MODEL----
-    Utilidad: Sirve inicializar y entrenar al modelo de prediccion.
-    Devuelve: Nada, Immprime Un resumen de los resultados de la prediccion.
+    Utilidad: Inicializa y entrena modelos de prediccion (clasificacion o regresion).
+    Devuelve: Objeto ModelResults con metricas, reportes y probabilidades segun el modelo.
     Parametros: 
-        * x_train_out, x_train_no_out, y_train_out, x_test_out, y_test_out, x_test_no_out: Datos de entrenamiento con y sin outliers 
-        * type_model: tipo del modelo a usar:
-            lr:LinearRegression
-            lg:LogisticRegression
-            rf:RandomForestClassifier
-        * class_weight:Distribucion del peso de las clases.
-        * umbral:Umbral de aceptacion por defecto de un 0.5%
-        * max_iter:Exclusivo de LogisticRegression controla el numero de iteraciones
-        * max_depth:Exclusivo de RandomForestClassifier controla la profundidad del arbol.
+        * ptd: Objeto ModelPrepareResults con datos de entrenamiento y test.
+        * type_model: tipo del modelo a usar (lr, lg, dt, rf).
+        * class_weight: Distribucion del peso de las clases.
+        * umbral: Umbral de decision para clasificacion (por defecto 0.5).
+        * max_iter: Maximo de iteraciones para LogisticRegression.
+        * max_depth: Profundidad maxima para arboles (DT y RF).
+        * calibrate_cv: Numero de cortes para CalibratedClassifierCV.
 """
+fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_ou"]
+ModelResults = namedtuple('ModelResults', fields,defaults=(None,) * len(fields))
 
-def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_no_out, x_test_no_out,y_train_no_out, y_test_no_out,type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None):
+def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None):
+    
+    if ptd is not None and isinstance(ptd, ModelPrepareResults):
+        x_train_out = ptd.x_train_out
+        x_test_out = ptd.x_test_out
+        y_train_out = ptd.y_train_out
+        y_test_out = ptd.y_test_out
+        x_train_no_out = ptd.x_train_no_out
+        x_test_no_out = ptd.x_test_no_out
+        y_train_no_out = ptd.y_train_no_out
+        y_test_no_out = ptd.y_test_no_out
+    else:
+        return "Sin Datos de entrenamiento"
     # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
     if type_model == "lg":
         model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
@@ -200,7 +211,7 @@ def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_
     elif type_model == "dt":
         model_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
         model_no_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
-        if calibrate_cv != None:
+        if calibrate_cv is not None:
             model_out = CalibratedClassifierCV(model_out, method='sigmoid', cv=calibrate_cv)
             model_no_out = CalibratedClassifierCV(model_no_out, method='sigmoid', cv=calibrate_cv)
     elif type_model == "rf":
@@ -231,9 +242,9 @@ def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_
              accuracy_no_out = accuracy_score(y_test_no_out,predictions_no_out)
              confusion_matrix_out = confusion_matrix(y_test_out,predictions_out)
              confusion_matrix_no_out = confusion_matrix(y_test_no_out,predictions_no_out)
-             return report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out, probs_out, probs_no_out
+             return ModelResults(report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out, probs_out, probs_no_out)
             
-        return report_out, report_no_out, probs_out, probs_no_out
+        return ModelResults(report_out, report_no_out, probs_out, probs_no_out)
     else:
         #predicciones
         preds_out = model_out.predict(x_test_out)
@@ -244,7 +255,7 @@ def train_print_model(x_train_out, x_test_out, y_train_out, y_test_out, x_train_
         # y r2
         r2_out = r2_score(y_test_out, preds_out)
         r2_no_out = r2_score(y_test_no_out, preds_no_out)
-        return preds_out, preds_no_out, r2_out, r2_no_out, mse_out, mse_no_out
+        return ModelResults(preds_out, preds_no_out, r2_out, r2_no_out, mse_out, mse_no_out)
 
 
 
