@@ -36,9 +36,9 @@ def db_connect():
         * target_column: Nombre de la columna objetivo para mantenerla al final.
         * transformation: Si es True aplica funcion, si es False factoriza.
         * transformation_func: Funcion lambda o def para transformar los datos.
-        * label_encoder: Si es True usa LabelEncoder, si no usa factorize.
+        * label_encoder: Si es "le" usa LabelEncoder, si es "pdf" usa factorize y si es "pdd" usa pandas dummies.
 """
-def create_factor_transf_and_json(column, df,folder_name,target_column=None, transformation = False,transformation_func = lambda x: x, label_encoder=True):
+def create_factor_transf_and_json(column, df,folder_name,target_column=None, transformation = False,transformation_func = lambda x: x, label_encoder="le"):
     file_name = "" 
     # Depende del valor de "transformation" toma un camino u otro
     if transformation:
@@ -50,27 +50,37 @@ def create_factor_transf_and_json(column, df,folder_name,target_column=None, tra
         df_aux = df[[column,column+"_transf"]].copy()
     else:
         #Creo la Columna "..._Factor"
-        if label_encoder:
+        folder_path = '../data/processed/factories/' + folder_name
+        if label_encoder == "le":
             le = LabelEncoder()
             df[column + "_factor"] = le.fit_transform(df[column])
-        else:
+            df_aux = df[[column, column+"_factor"]].copy()
+        elif label_encoder == "pdf":
             df[column+"_factor"] = pd.factorize(df[column])[0]
-        folder_path = '../data/processed/factories/' + folder_name
-        df_aux = df[[column, column+"_factor"]].copy()
-        
+            df_aux = df[[column, column+"_factor"]].copy()
+        elif label_encoder == "pdd":
+            # Guardamos los dummies en un DF temporal
+            dummies = pd.get_dummies(df[column], prefix=column)
+            
     #crea la carpeta si no existe
     os.makedirs(folder_path, exist_ok=True)
     
     # Esto prepara algunas columnas de tipo date para el json
-    for col in df_aux.columns:
-        if pd.api.types.is_datetime64_any_dtype(df_aux[col]):
-            df_aux[col] = df_aux[col].dt.strftime('%Y-%m-%d')
+    if 'df_aux' in locals():
+        for col in df_aux.columns:
+            if pd.api.types.is_datetime64_any_dtype(df_aux[col]):
+                df_aux[col] = df_aux[col].dt.strftime('%Y-%m-%d')
     
     # si "transformation" es true creamos el archivo y que guarde en la carpeta tranformations de otra manera en factories
     if transformation:
         file_name = f'{column}_transformation_rules.json'
         df_to_save = df_aux[[column, column+"_transf"]]
         data_to_export = df_to_save.to_dict(orient = 'records')
+    elif label_encoder == "pdd":
+        for col in dummies.columns:
+            df[f"{col}_dummy"] = dummies[col]
+        file_name = f'{column}_dummies_rules.json'
+        data_to_export = {"original_column": column, "dummy_columns": list(dummies.columns)}
     else:
         file_name = f'{column}_factory_rules.json'
         df_unique = df_aux[[column, column+"_factor"]].drop_duplicates()
@@ -117,6 +127,8 @@ def create_factor_transf_and_json(column, df,folder_name,target_column=None, tra
 """
 ModelPrepareResults = namedtuple('ModelPrepareResults', ["x_train_out","x_test_out","y_train_out","y_test_out","x_train_no_out","x_test_no_out","y_train_no_out","y_test_no_out"])
 def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42, scaler_type=1, stratify = False):
+    #Convertimos Trues a 1 y falses a 0
+    df = df.replace({True: 1, False: 0})
     
     # Separamos X e y
     X = df.drop(columns=[target_col])
@@ -134,8 +146,12 @@ def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42
     y_test_no_out = y_test_out.copy()
     # creamos un diccionario limpio para almacenar los limites mas adelante
     outlier_limits = {}
-    # buscamos las variables numericas
-    numeric_cols = x_train_no_out.select_dtypes(include=["number"]).columns
+
+    # Filtramos para que NO incluya columnas que contengan etiquetas de dummies,factor o transf
+    numeric_cols = [
+        col for col in x_train_no_out.select_dtypes(include=["number"]).columns 
+        if "_factor" not in col and "_dummy" not in col and "_transf" not in col
+    ]
     
     #luego recorremos las columnas
     for col in numeric_cols:
@@ -222,18 +238,22 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         return "Sin Datos de entrenamiento"
     # Preparo El Modelo dependiendo del valor de class_weight y el tipo de modelo seleccionado
     if type_model == "lg":
+        title_model="LogisticRegression"
         model_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
         model_no_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
     elif type_model == "dt":
+        title_model="DecisionTreeClassifier"
         model_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
         model_no_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
         if calibrate_cv is not None:
             model_out = CalibratedClassifierCV(model_out, method='sigmoid', cv=calibrate_cv)
             model_no_out = CalibratedClassifierCV(model_no_out, method='sigmoid', cv=calibrate_cv)
     elif type_model == "rf":
+        title_model="RandomForestClassifier"
         model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
         model_no_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
-    elif type_model == "lr":  # linear regression
+    elif type_model == "lr":
+        title_model="LinearRegression"  # linear regression
         model_out = LinearRegression()
         model_no_out = LinearRegression()
     # entrenamos usando x_train_out y x_train_no_out
@@ -255,8 +275,8 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         raw_report_no_out = classification_report(y_test_no_out, predictions_no_out)
         
         # Agregamos el titulo con f-strings
-        report_out = f"--- REPORTE CON OUTLIERS ({type_model.upper()}) ---\n{raw_report_out}"
-        report_no_out = f"--- REPORTE SIN OUTLIERS ({type_model.upper()}) ---\n{raw_report_no_out}"
+        report_out = f"--- REPORTE CON OUTLIERS ({title_model}) ---\n{raw_report_out}"
+        report_no_out = f"--- REPORTE SIN OUTLIERS ({title_model}) ---\n{raw_report_no_out}"
         if type_model == "dt":
              accuracy_out = accuracy_score(y_test_out,predictions_out)
              accuracy_no_out = accuracy_score(y_test_no_out,predictions_no_out)
