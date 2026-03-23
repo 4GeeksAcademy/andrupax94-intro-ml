@@ -219,10 +219,10 @@ def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42
     Y Se accede con tpm.report_out al valor
 
 """
-fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_out"]
+fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_out","model_no_out","model_out"]
 ModelResults = namedtuple('ModelResults', fields, defaults = (None,) * len(fields))
 
-def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None, alpha=1.0):
+def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None, alpha=1.0, criterion = "gini"):
     
     if ptd is not None and isinstance(ptd, ModelPrepareResults):
         x_train_out = ptd.x_train_out
@@ -242,8 +242,8 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         model_no_out = LogisticRegression(class_weight=class_weight, max_iter=max_iter)
     elif type_model == "dt":
         title_model="DecisionTreeClassifier"
-        model_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
-        model_no_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth)
+        model_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth, criterion=criterion)
+        model_no_out = DecisionTreeClassifier(class_weight= class_weight,random_state=random_state, max_depth=max_depth, criterion=criterion)
         if calibrate_cv is not None:
             model_out = CalibratedClassifierCV(model_out, method='sigmoid', cv=calibrate_cv)
             model_no_out = CalibratedClassifierCV(model_no_out, method='sigmoid', cv=calibrate_cv)
@@ -285,9 +285,9 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
              accuracy_no_out = accuracy_score(y_test_no_out,predictions_no_out)
              confusion_matrix_out = confusion_matrix(y_test_out,predictions_out)
              confusion_matrix_no_out = confusion_matrix(y_test_no_out,predictions_no_out)
-             return ModelResults(report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out, probs_out, probs_no_out)
+             return ModelResults(report_out, report_no_out,accuracy_out, accuracy_no_out, confusion_matrix_out, confusion_matrix_no_out, probs_out, probs_no_out,model_no_out=model_no_out,model_out=model_out)
             
-        return ModelResults(report_out, report_no_out, probs_out, probs_no_out)
+        return ModelResults(report_out, report_no_out, probs_out, probs_no_out, model_no_out=model_no_out, model_out = model_out)
     else:
         #predicciones
         preds_out = model_out.predict(x_test_out)
@@ -302,7 +302,7 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         report_out = f"--- REPORTE CON OUTLIERS ({title_model}) ---\nR2: {r2_no_out}\nMSE: {mse_no_out}"
         report_no_out = f"--- REPORTE SIN OUTLIERS ({title_model}) ---\nR2: {r2_out}\nMSE: {mse_out}"
       
-        return ModelResults(preds_out = preds_out, preds_no_out = preds_no_out, r2_out = r2_out, r2_no_out = r2_no_out, mse_out = mse_out, mse_no_out = mse_no_out,report_out = report_out,report_no_out=report_no_out)
+        return ModelResults(preds_out = preds_out, preds_no_out = preds_no_out, r2_out = r2_out, r2_no_out = r2_no_out, mse_out = mse_out, mse_no_out = mse_no_out,report_out = report_out,report_no_out=report_no_out,model_no_out=model_no_out,model_out=model_out)
 
 
 
