@@ -5,8 +5,7 @@ import pandas as pd
 import json
 import os
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression,LinearRegression,Lasso
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import classification_report,r2_score,mean_squared_error,accuracy_score,confusion_matrix
@@ -223,7 +222,7 @@ def prepare_test_data(df, target_col,folder_name, test_size=0.2, random_state=42
 fields=["report_out","report_no_out","accuracy_out","accuracy_no_out","confusion_matrix_out","confusion_matrix_no_out","probs_out","probs_no_out","preds_out","preds_no_out","r2_out","r2_no_out","mse_out","mse_no_out"]
 ModelResults = namedtuple('ModelResults', fields, defaults = (None,) * len(fields))
 
-def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None):
+def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_iter=10000,max_depth=7,random_state=42, calibrate_cv=None, alpha=1.0):
     
     if ptd is not None and isinstance(ptd, ModelPrepareResults):
         x_train_out = ptd.x_train_out
@@ -253,14 +252,18 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         model_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
         model_no_out = RandomForestClassifier(n_estimators=200, class_weight=class_weight, random_state=random_state,max_depth=max_depth)
     elif type_model == "lr":
-        title_model="LinearRegression"  # linear regression
+        title_model="LinearRegression"  
         model_out = LinearRegression()
         model_no_out = LinearRegression()
+    elif type_model == "ls":
+        title_model="Lasso"  
+        model_out = Lasso(alpha=alpha, random_state=random_state)
+        model_no_out = Lasso(alpha=alpha, random_state=random_state)
     # entrenamos usando x_train_out y x_train_no_out
     model_out.fit(x_train_out, y_train_out)
     model_no_out.fit(x_train_no_out, y_train_no_out)
     
-    if type_model != "lr":
+    if type_model != "lr" and type_model !="ls":
         # Obtener Probabilidades (en lugar de clases directas)
         # antes usaba predict pero para modificar el umbral necesito predict_proba
         probs_out = model_out.predict_proba(x_test_out)[:, 1]
@@ -295,7 +298,11 @@ def train_print_model(ptd, type_model="lg", class_weight=None, umbral=0.5, max_i
         # y r2
         r2_out = r2_score(y_test_out, preds_out)
         r2_no_out = r2_score(y_test_no_out, preds_no_out)
-        return ModelResults(preds_out = preds_out, preds_no_out = preds_no_out, r2_out = r2_out, r2_no_out = r2_no_out, mse_out = mse_out, mse_no_out = mse_no_out)
+        
+        report_out = f"--- REPORTE CON OUTLIERS ({title_model}) ---\nR2: {r2_no_out}\nMSE: {mse_no_out}"
+        report_no_out = f"--- REPORTE SIN OUTLIERS ({title_model}) ---\nR2: {r2_out}\nMSE: {mse_out}"
+      
+        return ModelResults(preds_out = preds_out, preds_no_out = preds_no_out, r2_out = r2_out, r2_no_out = r2_no_out, mse_out = mse_out, mse_no_out = mse_no_out,report_out = report_out,report_no_out=report_no_out)
 
 
 
